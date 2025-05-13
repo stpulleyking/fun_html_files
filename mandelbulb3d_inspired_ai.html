@@ -1,0 +1,182 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mandelbulb AI Deep Orbit</title>
+  <style>
+    html, body { margin: 0; overflow: hidden; background: black; height: 100%; }
+    canvas { width: 100%; height: 100%; display: block; }
+  </style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js";
+
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("canvas") });
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+const scene = new THREE.Scene();
+const camera = new THREE.Camera();
+
+const uniforms = {
+  iTime: { value: 0.0 },
+  iResolution: { value: new THREE.Vector3() }
+};
+
+
+const material = new THREE.ShaderMaterial({
+
+  uniforms,
+  fragmentShader: `
+    precision highp float;
+    uniform float iTime;
+    uniform vec3 iResolution;
+uniform float orbitPersonality;
+uniform float morphPersonality;
+
+    float sphereDE(vec3 p) {
+      return length(p) - 1.0;
+    }
+
+    float mandelbulbDE(vec3 z) {
+      vec3 w = z;
+      float dz = 1.0;
+      const float Power = 8.0;
+      for (int i = 0; i < 10; i++) {
+        float r = length(w);
+        if (r > 4.0) break;
+        r = max(r, 0.0001);
+        float theta = acos(clamp(w.z / r, -1.0, 1.0));
+        float phi = atan(w.y, w.x);
+        float rN = pow(r, Power);
+        dz = pow(r, Power - 1.0) * Power * dz + 1.0;
+        theta *= Power;
+        phi *= Power;
+        w = rN * vec3(sin(theta) * cos(phi), sin(phi) * sin(theta), cos(theta)) + z;
+      }
+      float lenW = max(length(w), 0.0001);
+      return 0.5 * log(lenW) * lenW / dz;
+    }
+
+    float hybridDE(vec3 p, float blend) {
+      return mix(sphereDE(p), mandelbulbDE(p), blend);
+    }
+
+    vec3 getNormal(vec3 p, float blend) {
+      float eps = 0.001;
+      return normalize(vec3(
+        hybridDE(p + vec3(eps, 0, 0), blend) - hybridDE(p - vec3(eps, 0, 0), blend),
+        hybridDE(p + vec3(0, eps, 0), blend) - hybridDE(p - vec3(0, eps, 0), blend),
+        hybridDE(p + vec3(0, 0, eps), blend) - hybridDE(p - vec3(0, 0, eps), blend)
+      ));
+    }
+
+    vec3 backgroundGradient(vec2 uv) {
+      return mix(vec3(0.1, 0.1, 0.2), vec3(0.9, 0.6, 0.3), uv.y * 0.5 + 0.5);
+    }
+
+    void main() {
+      vec2 uv = (gl_FragCoord.xy / iResolution.xy) * 2.0 - 1.0;
+
+      float totalTime = iTime;
+      float loopDuration = 30.0;
+      float t = mod(totalTime, loopDuration) / loopDuration;
+
+      // One-way infinite deepening morph
+      float blend = 0.5 + 0.5 * sin((iTime + morphPersonality * 60.0) * 3.14159 / 120.0); // 2-minute full cycle // allow overgrowth
+
+      float thetaVar = sin(iTime * (0.07 + orbitPersonality * 0.1)) * (1.0 + orbitPersonality) + 0.183493;
+      float phiVar = cos(iTime * (0.09 + orbitPersonality * 0.1)) * (1.0 + orbitPersonality) + 0.379653;
+      float radius = 1.25 + 0.3 * sin(iTime * 0.2);  // smaller sphere
+      float height = 1.1 + 0.3 * sin(iTime * (0.17 + orbitPersonality * 0.15));  // slightly lower elevation
+
+      vec3 camPos;
+      vec3 lookAt = vec3(0.0);
+
+      if (t < 0.3) {
+        float ft = t / 0.3;
+        vec3 start = vec3(0.0, 1.75, 3.5); // medium approach start
+        vec3 diveTarget = vec3(
+          0.5 * sin(iTime * 0.4),
+          0.3 * sin(iTime * 0.27),
+          0.5 * cos(iTime * 0.33)
+        ); // approach close to core but not too tight
+        camPos = mix(start, diveTarget, smoothstep(0.0, 1.0, ft));
+      } else {
+        float a = (t - 0.3) * 6.283185 * 2.0;
+        float orbitBlend = 0.5 + 0.5 * sin(iTime * 0.13);
+        float orbitRadius = mix(0.8, 1.8, orbitBlend);
+        float yOffset = mix(0.8, 1.3, 0.5 + 0.5 * cos(iTime * 0.19));
+        camPos = vec3(sin(a + phiVar) * orbitRadius, yOffset, cos(a + thetaVar) * orbitRadius);
+      }
+
+      vec3 forward = normalize(lookAt - camPos);
+      vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), forward));
+      vec3 up = normalize(cross(forward, right));
+      
+      // Add a rolling rotational matrix on the camera frame
+      float roll = sin(iTime * 0.6) * 0.4 + cos(iTime * 0.17) * 0.2;
+      mat3 rot;
+      rot[0] = right;
+      rot[1] = up;
+      rot[2] = forward;
+
+      // Apply Z-axis roll (around forward vector)
+      mat3 rollMat = mat3(
+        cos(roll), -sin(roll), 0.0,
+        sin(roll),  cos(roll), 0.0,
+        0.0,        0.0,       1.0
+      );
+
+      rot = rot * rollMat;
+
+      vec3 rayDir = normalize(uv.x * rot[0] + uv.y * rot[1] + 1.5 * rot[2]);
+    
+
+      vec3 pos = camPos;
+      float totalDist = 0.0;
+      float d = 0.0;
+      int steps;
+      for (steps = 0; steps < 128; steps++) {
+        d = hybridDE(pos, blend);
+        totalDist += d;
+        pos += rayDir * d;
+        if (d < 0.001 || totalDist > 100.0) break;
+      }
+
+      if (d < 0.001) {
+        vec3 normal = getNormal(pos, blend);
+        vec3 lightDir = normalize(vec3(0.5, 0.8, -1.0));
+        float diffuse = max(dot(normal, lightDir), 0.0);
+        vec3 psychedelic = 0.5 + 0.5 * cos(float(steps) * 0.15 + vec3(0.0, 2.0, 4.0));
+        gl_FragColor = vec4(psychedelic * diffuse, 1.0);
+      } else {
+        gl_FragColor = vec4(backgroundGradient(uv), 1.0);
+      }
+    }
+  `,
+});
+
+const geometry = new THREE.PlaneGeometry(2, 2);
+const quad = new THREE.Mesh(geometry, material);
+scene.add(quad);
+
+
+let t0 = 301.0;
+let orbitPersonality = Math.random();
+let morphPersonality = Math.random();
+function animate(time) {
+
+  uniforms.iTime.value = time * 0.001;
+  uniforms.iResolution.value.set(window.innerWidth, window.innerHeight, 1);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>
