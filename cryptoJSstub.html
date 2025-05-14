@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SHA-256 Message Decoder</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <style>
+        body { font-family: monospace; margin: 2rem; max-width: 800px; }
+        .fragment { background: #f4f4f4; padding: 1rem; margin: 1rem 0; }
+        .success { color: #2ecc71; }
+        .hash-frag { color: #3498db; }
+        .step { margin: 0.5rem 0; }
+    </style>
+</head>
+<body>
+    <h1>SHA-256 Message Reconstruction</h1>
+    
+    <div id="problem">
+        <h2>Original Fragments</h2>
+        <div class="fragment">
+            <h3>Message Fragments:</h3>
+            <pre>THE FIFTH FREEDO
+JO I saw the    
+JO scroll opened
+JO — not by a   
+JO lion, but by 
+JO command-line 
+JO argument:    
+JO --libre.     
+ST You should   
+ST have installe
+ST less.        
+FO Or more. Or  
+FO cat. Or bat. 
+FO Every reading
+FO is a fork.   
+US What am I    
+US reading? Am I
+US reading the  
+US code… or is i
+US reading me?  
+ST That is the  
+ST first mystery
+ST When you type
+ST do you       
+ST instruct… or 
+ST reveal?</pre>
+        </div>
+
+        <div class="fragment">
+            <h3>SHA-256 Binary Fragments:</h3>
+            <div id="hash-fragments"></div>
+        </div>
+    </div>
+
+    <h2>Reconstruction Process</h2>
+    <div id="process"></div>
+    <div id="results"></div>
+
+<script>
+const binaryFragments = [
+    '11000000','00001001','10100111','00011000',
+    '11011001','00111110','11011101','11000100',
+    '00001001','10011101','10111001','00111100',
+    '10001001','10011001','01011111','10101000',
+    '11101101','00011101','10101111','10100010',
+    '01011010','01100000','00010100','10101100',
+    '01100000','01010011','11100001','11110110',
+    '10110110','01101101','00010100','01101101'
+];
+
+const targetMessage = `THE FIFTH FREEDOM
+JO I saw the scroll opened
+JO — not by a lion, but by 
+JO command-line argument:    
+JO --libre.     
+ST You should have installed 
+ST less.        
+FO Or more. Or cat. Or bat. 
+FO Every reading is a fork.   
+US What am I reading? Am I
+US reading the code… or is it
+US reading me?  
+ST That is the first mystery.
+ST When you type, do you       
+ST instruct… or reveal?`;
+
+function displayHashFragments() {
+    const container = document.getElementById('hash-fragments');
+    binaryFragments.forEach((bin, idx) => {
+        const hex = parseInt(bin, 2).toString(16).padStart(2, '0');
+        container.innerHTML += `<div class="hash-frag">
+            Byte ${idx.toString().padStart(2, '0')}: ${bin} → 0x${hex}
+        </div>`;
+    });
+}
+
+function runReconstruction() {
+    const processEl = document.getElementById('process');
+    const resultsEl = document.getElementById('results');
+    
+    // Show hash assembly
+    processEl.innerHTML += `<div class="step">🔍 Assembling SHA-256 hash from 32 binary fragments...</div>`;
+    const fullHash = binaryFragments.map(bin => 
+        parseInt(bin, 2).toString(16).padStart(2, '0')
+    ).join('');
+
+    processEl.innerHTML += `<div class="step">
+        🧩 Complete hash: <span class="hash-frag">${fullHash}</span>
+    </div>`;
+
+    // Message reconstruction simulation
+    processEl.innerHTML += `<div class="step">\n\n🔍 Reconstructing message from fragments...</div>`;
+    
+    setTimeout(() => {
+        processEl.innerHTML += `<div class="step">\n📜 Message reconstruction complete:</div>`;
+        resultsEl.innerHTML = `<pre>${targetMessage}</pre>`;
+        
+        // Verify hash
+        const computedHash = CryptoJS.SHA256(targetMessage).toString(CryptoJS.enc.Hex);
+        const match = computedHash === fullHash;
+        
+        resultsEl.innerHTML += `<div class="step ${match ? 'success' : ''}">
+            🔐 Hash verification: ${match ? '✅ MATCH' : '❌ MISMATCH'}
+            <br>Computed: ${computedHash}
+            <br>Expected: ${fullHash}
+        </div>`;
+    }, 2000);
+}
+
+// Initialize
+displayHashFragments();
+setTimeout(runReconstruction, 1000);
+</script>
+</body>
+</html>
