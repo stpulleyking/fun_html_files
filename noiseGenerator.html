@@ -26,14 +26,15 @@
         let noiseSource = null;
         let filter = null;
         let thunderTimer = null;
+        let rainTimer = null;
         let currentNoise = 'white'; // 'white', 'green', 'thunder'
 
         const destination = audioCtx.createMediaStreamDestination();
         const audioElement = document.getElementById('noiseAudio');
         audioElement.srcObject = destination.stream;
 
-        function createNoiseBuffer() {
-            const bufferSize = 2 * audioCtx.sampleRate;
+        function createNoiseBuffer(duration = 2) {
+            const bufferSize = duration * audioCtx.sampleRate;
             const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
             const output = buffer.getChannelData(0);
             for (let i = 0; i < bufferSize; i++) {
@@ -73,41 +74,81 @@
         function playNoise() {
             stopNoise();
 
-            const buffer = createNoiseBuffer();
-            noiseSource = audioCtx.createBufferSource();
-            noiseSource.buffer = buffer;
-            noiseSource.loop = true;
-
             if (currentNoise === 'white') {
+                noiseSource = audioCtx.createBufferSource();
+                noiseSource.buffer = createNoiseBuffer();
+                noiseSource.loop = true;
                 noiseSource.connect(destination);
+                noiseSource.start();
             } else if (currentNoise === 'green') {
+                noiseSource = audioCtx.createBufferSource();
+                noiseSource.buffer = createNoiseBuffer();
+                noiseSource.loop = true;
                 filter = audioCtx.createBiquadFilter();
                 filter.type = "bandpass";
                 filter.frequency.value = 500;
                 filter.Q.value = 0.7;
                 noiseSource.connect(filter);
                 filter.connect(destination);
+                noiseSource.start();
             } else if (currentNoise === 'thunder') {
-                // Greenish rain noise
-                const rainFilter = audioCtx.createBiquadFilter();
-                rainFilter.type = "bandpass";
-                rainFilter.frequency.value = 500;
-                rainFilter.Q.value = 0.7;
-
-                const rainGain = audioCtx.createGain();
-                rainGain.gain.value = 0.3; // Rain volume
-
-                noiseSource.connect(rainFilter);
-                rainFilter.connect(rainGain);
-                rainGain.connect(destination);
-
-                // Random thunder generator
+                startRainBackground();
+                startRainDrops();
                 scheduleThunder();
             }
 
-            noiseSource.start();
             audioElement.play();
             updateMediaMetadata();
+        }
+
+        function startRainBackground() {
+            const rainSource = audioCtx.createBufferSource();
+            rainSource.buffer = createNoiseBuffer();
+            rainSource.loop = true;
+
+            const rainFilter = audioCtx.createBiquadFilter();
+            rainFilter.type = "bandpass";
+            rainFilter.frequency.value = 500;
+            rainFilter.Q.value = 0.7;
+
+            const rainGain = audioCtx.createGain();
+            rainGain.gain.value = 0.2; // background rain volume
+
+            rainSource.connect(rainFilter);
+            rainFilter.connect(rainGain);
+            rainGain.connect(destination);
+
+            rainSource.start();
+            noiseSource = rainSource; // store reference for stopNoise()
+        }
+
+        function startRainDrops() {
+            function playRainDrop() {
+                const drop = audioCtx.createBufferSource();
+                const dropBuffer = createNoiseBuffer(0.05); // very short burst
+                drop.buffer = dropBuffer;
+
+                const bandpass = audioCtx.createBiquadFilter();
+                bandpass.type = "bandpass";
+                bandpass.frequency.value = 800; // raindrop tone
+                bandpass.Q.value = 2;
+
+                const dropGain = audioCtx.createGain();
+                dropGain.gain.setValueAtTime(0, audioCtx.currentTime);
+                dropGain.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 0.005);
+                dropGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+
+                drop.connect(bandpass);
+                bandpass.connect(dropGain);
+                dropGain.connect(destination);
+                drop.start();
+
+                // 10× faster: random next drop in 5-25ms
+                const nextDelay = Math.random() * 20 + 5;
+                rainTimer = setTimeout(playRainDrop, nextDelay);
+            }
+
+            playRainDrop();
         }
 
         function scheduleThunder() {
@@ -117,42 +158,36 @@
                 const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
                 const output = buffer.getChannelData(0);
                 for (let i = 0; i < bufferSize; i++) {
-                    // Low rumble with exponential fade-out
                     output[i] = (Math.random() * 2 - 1) * Math.exp(-3 * i / bufferSize);
                 }
                 thunder.buffer = buffer;
 
-                // Apply low-pass filter for deeper bass
                 const lowpass = audioCtx.createBiquadFilter();
                 lowpass.type = 'lowpass';
-                lowpass.frequency.value = 200; // Lower frequency
+                lowpass.frequency.value = 200;
 
-                // Add echo with DelayNode
                 const delay = audioCtx.createDelay();
-                delay.delayTime.value = 0.4; // 400ms echo
+                delay.delayTime.value = 0.4;
                 const feedback = audioCtx.createGain();
-                feedback.gain.value = 0.3; // Amount of echo
+                feedback.gain.value = 0.3;
 
-                // Connect thunder to lowpass, delay, feedback loop
                 thunder.connect(lowpass);
                 lowpass.connect(delay);
                 delay.connect(feedback);
-                feedback.connect(delay); // Feedback loop
+                feedback.connect(delay);
                 delay.connect(destination);
-                lowpass.connect(destination); // Dry signal
+                lowpass.connect(destination);
 
-                // Fade in/out envelope
                 const thunderGain = audioCtx.createGain();
                 thunderGain.gain.setValueAtTime(0, audioCtx.currentTime);
-                thunderGain.gain.linearRampToValueAtTime(0.7, audioCtx.currentTime + 0.5); // fade in
-                thunderGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 4); // fade out
+                thunderGain.gain.linearRampToValueAtTime(1.5, audioCtx.currentTime + 0.5);
+                thunderGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 4);
 
                 lowpass.connect(thunderGain);
                 thunderGain.connect(destination);
 
                 thunder.start();
 
-                // Schedule next thunder randomly between 5-20 seconds
                 const nextDelay = Math.random() * 15 + 5;
                 thunderTimer = setTimeout(playThunder, nextDelay * 1000);
             }
@@ -174,6 +209,10 @@
                 clearTimeout(thunderTimer);
                 thunderTimer = null;
             }
+            if (rainTimer) {
+                clearTimeout(rainTimer);
+                rainTimer = null;
+            }
         }
 
         function cycleNoiseType(direction) {
@@ -187,7 +226,7 @@
 
         document.getElementById('toggleButton').addEventListener('click', async () => {
             await audioCtx.resume();
-            if (!noiseSource) {
+            if (!noiseSource && currentNoise !== 'thunder') {
                 playNoise();
                 document.getElementById('toggleButton').textContent = 'Switch to Green Noise';
             } else {
