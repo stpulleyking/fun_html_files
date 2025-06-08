@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Typing Speed Tracker</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 2em;
+    }
+    textarea {
+      width: 100%;
+      height: 200px;
+      font-size: 1.2em;
+    }
+    .metrics {
+      margin-top: 1em;
+    }
+    .metrics span {
+      display: inline-block;
+      margin-right: 1.5em;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>Typing Speed Tracker</h1>
+  <textarea id="typingArea" placeholder="Start typing..."></textarea>
+  <div class="metrics">
+    <span id="wpm">WPM: 0</span>
+    <span id="stopwatch">Time: 00:00</span>
+  </div>
+
+  <script>
+    const typingArea = document.getElementById('typingArea');
+    const wpmDisplay = document.getElementById('wpm');
+    const stopwatchDisplay = document.getElementById('stopwatch');
+
+    let startTime = null;
+    let timerInterval = null;
+
+    function updateMetrics() {
+      const text = typingArea.value;
+      const words = text.trim().split(/\s+/).filter(w => w.length > 0);
+      const now = Date.now();
+      const elapsedMinutes = (now - startTime) / 60000;
+      const wpm = elapsedMinutes > 0 ? (words.length / elapsedMinutes).toFixed(1) : 0;
+
+      wpmDisplay.textContent = `WPM: ${wpm}`;
+
+      const elapsedSeconds = Math.floor((now - startTime) / 1000);
+      const minutes = String(Math.floor(elapsedSeconds / 60)).padStart(2, '0');
+      const seconds = String(elapsedSeconds % 60).padStart(2, '0');
+      stopwatchDisplay.textContent = `Time: ${minutes}:${seconds}`;
+    }
+
+    typingArea.addEventListener('input', () => {
+      if (!startTime) {
+        startTime = Date.now();
+        timerInterval = setInterval(updateMetrics, 500);
+      }
+      updateMetrics();
+    });
+  </script>
+</body>
+</html>
